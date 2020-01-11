@@ -1,16 +1,19 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Xml;
 
 namespace Axml.NET
 {
-    public static class Axml
+    internal static class Axml
     {
-        internal const ushort ResNullType = 0x0000;
-        internal const ushort ResStringPoolType = 0x0001;
-        internal const ushort ResTableType = 0x0002;
-        internal const ushort ResXmlType = 0x0003;
+        public const ushort ResNullType = 0x0000;
+        public const ushort ResStringPoolType = 0x0001;
+        public const ushort ResTableType = 0x0002;
+        public const ushort ResXmlType = 0x0003;
+
+        public const uint Utf8Flag = 1 << 8;
     }
 
     internal class AxmlParserException : Exception
@@ -160,9 +163,91 @@ namespace Axml.NET
     {
         public readonly ArscHeader Header;
 
+        public readonly uint StringCount;
+        public readonly uint StyleCount;
+        public readonly uint Flags;
+
+        private readonly bool _isUtf8;
+
+        public readonly uint StringPoolOffset;
+        public readonly uint StylePoolOffset;
+
+        private readonly uint[] _stringOffsets;
+        private readonly uint[] _styleOffsets;
+
+        private readonly byte[] _charBuff;
+        private readonly uint[] _styles;
+
         public StringBlock(ref BinaryReader reader, ArscHeader header)
         {
             Header = header;
+            StringCount = reader.ReadUInt32();
+            StyleCount = reader.ReadUInt32();
+            Flags = reader.ReadUInt32();
+
+            _isUtf8 = (Flags & Axml.Utf8Flag) != 0;
+
+            StringPoolOffset = reader.ReadUInt32();
+            StylePoolOffset = reader.ReadUInt32();
+
+            _stringOffsets = new uint[StringCount];
+            for (var i = 0; i < StringCount; i++)
+            {
+                _stringOffsets[i] = reader.ReadUInt32();
+            }
+
+            _styleOffsets = new uint[StyleCount];
+            for (var i = 0; i < StyleCount; i++)
+            {
+                _styleOffsets[i] = reader.ReadUInt32();
+            }
+
+            var size = Header.Size - StringPoolOffset;
+            if (StylePoolOffset > 0 && StyleCount > 0)
+            {
+                size = StylePoolOffset - StringPoolOffset;
+            }
+
+            _charBuff = new byte[size];
+            reader.Read(_charBuff, (int) reader.BaseStream.Position, (int) size);
+
+            if (StylePoolOffset > 0 && StyleCount > 0)
+            {
+                size = Header.Size - StylePoolOffset;
+
+                _styles = new uint[size / 4];
+                for (var i = 0; i < (int) size / 4; i++)
+                {
+                    _styles[i] = reader.ReadUInt32();
+                }
+            }
+        }
+
+        public string GetString(int i)
+        {
+            if (i < 0 || _stringOffsets.Length < 1 || i > StringCount)
+            {
+                throw new IndexOutOfRangeException("No string present at provided index");
+            }
+
+            var offset = _stringOffsets[i];
+
+            if (_isUtf8)
+            {
+                return Decode8(offset);
+            }
+            else
+            {
+                return Decode16(offset);
+            }
+        }
+
+        private string Decode8(uint offset)
+        {
+        }
+
+        private string Decode16(uint offset)
+        {
         }
     }
 }
